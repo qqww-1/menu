@@ -818,7 +818,7 @@ function renderGrid(){
   emptyEl.hidden=true;
   grid.innerHTML=list.map(function(d){
     var media=d.img
-      ?'<img src="'+esc(d.img)+'" alt="'+esc(d.name)+'" loading="lazy">'
+      ?'<img src="'+esc(imgSrc(d))+'" alt="'+esc(d.name)+'" loading="lazy">'
       :'<div class="no-photo">还没有照片</div>';
     return '<article class="card" role="button" tabindex="0" data-id="'+esc(d.id)+'" aria-label="'+esc(d.name)+' '+d.price+'元">'
       +'<div class="card-media">'+media+'</div>'
@@ -834,7 +834,7 @@ function renderGrid(){
 function openDetail(id){
   var d=findDish(id);if(!d)return;
   detailId=id;detailQty=1;
-  var media=d.img?'<img src="'+esc(d.img)+'" alt="'+esc(d.name)+'">':'<div class="no-photo">还没有照片</div>';
+  var media=d.img?'<img src="'+esc(imgSrc(d))+'" alt="'+esc(d.name)+'">':'<div class="no-photo">还没有照片</div>';
   detailContent.innerHTML='<div class="detail-media">'+media+'<div class="badges">'+badgeHtml(d)+'</div></div>'
     +'<div class="detail-body">'
     +'<div class="detail-title-row"><h2 class="detail-title">'+esc(d.name)+'</h2><span class="detail-price"><i>¥</i>'+d.price+'</span></div>'
@@ -881,7 +881,7 @@ function renderCart(){
   }else{
     cartBody.innerHTML=items.map(function(x){
       var thumb=x.d.img
-        ?'<img src="'+esc(x.d.img)+'" alt="'+esc(x.d.name)+'">'
+        ?'<img src="'+esc(imgSrc(x.d))+'" alt="'+esc(x.d.name)+'">'
         :'<div class="no-photo" style="position:static;width:56px;height:56px;border:2px solid var(--cocoa);border-radius:14px">空</div>';
       return '<div class="cart-item">'+thumb
         +'<div class="cart-item-info"><b>'+esc(x.d.name)+'</b><span>¥'+x.d.price+' × '+x.qty+' = ¥'+(x.d.price*x.qty)+'</span></div>'
@@ -931,7 +931,7 @@ function renderAdmin(){
   }
   adminList.innerHTML=dishes.map(function(d){
     var thumb=d.img
-      ?'<img src="'+esc(d.img)+'" alt="'+esc(d.name)+'">'
+      ?'<img src="'+esc(imgSrc(d))+'" alt="'+esc(d.name)+'">'
       :'<div class="no-photo" style="position:static;width:52px;height:52px;border:2px solid var(--cocoa);border-radius:12px">空</div>';
     return '<div class="admin-row">'+thumb
       +'<div class="admin-info"><b>'+esc(d.name)+'</b><span>'+esc(d.cat)+' · ¥'+d.price+(badgeText(d)?' · '+badgeText(d):'')+'</span></div>'
@@ -978,12 +978,12 @@ function compressImage(file){
       var img=new Image();
       img.onerror=function(){reject(new Error('图片打不开'))};
       img.onload=function(){
-        var max=1000,w=img.width,h=img.height;
+        var max=800,w=img.width,h=img.height;
         if(w>max){h=Math.round(h*max/w);w=max}
         var canvas=document.createElement('canvas');
         canvas.width=w;canvas.height=h;
         canvas.getContext('2d').drawImage(img,0,0,w,h);
-        resolve(canvas.toDataURL('image/jpeg',0.78));
+        resolve(canvas.toDataURL('image/jpeg',0.7));
       };
       img.src=reader.result;
     };
@@ -1025,6 +1025,7 @@ function saveDishForm(){
       dishes.unshift(data);
     }
     if(!persistDishes())return;
+    imgVer=String(Date.now());
     var wasEditing=!!targetId;
     renderCats();renderGrid();renderAdmin();hideForm();
     toast(wasEditing?'已保存修改':'已添加菜品');
@@ -1199,6 +1200,29 @@ var CLOUD_FILE='menu.json';
 var CLOUD_API='https://api.github.com/repos/qqww-1/menu/contents/menu.json';
 var TOKEN_KEY='cute.menu.ghToken.v1';
 var cloudReady=false;
+var imgVer='1';
+function imgSrc(d){
+  var p=(d&&d.img)||'';
+  if(!p||p.indexOf('data:')===0)return p;
+  return p+(p.indexOf('?')>-1?'&':'?')+'v='+encodeURIComponent(imgVer);
+}
+function retryImg(el){
+  var n=+(el.getAttribute('data-retry')||0);
+  if(n>=2)return;
+  el.setAttribute('data-retry',n+1);
+  setTimeout(function(){
+    var src=el.getAttribute('src')||'';
+    el.src=src.split('?')[0]+'?v='+Date.now();
+  },3000);
+}
+window.__retryImg=retryImg;
+document.addEventListener('error',function(e){
+  var el=e.target;
+  if(el&&el.tagName==='IMG'){
+    var s=el.getAttribute('src')||'';
+    if(s.indexOf('assets/')===0)retryImg(el);
+  }
+},true);
 function cloudToken(){try{return localStorage.getItem(TOKEN_KEY)||''}catch(e){return ''}}
 function setCloudHint(msg){
   var el=$('#cloudHint');if(!el)return;
@@ -1249,6 +1273,7 @@ function loadCloud(){
     return r.ok?r.json():null;
   }).then(function(data){
     if(!data||!Array.isArray(data.dishes)||!data.dishes.length){cloudReady=true;return;}
+    imgVer=String(data.updated_at||Date.now()).replace(/[^0-9A-Za-z]/g,'')||String(Date.now());
     dishes=normalize(data.dishes);
     write(DKEY,dishes);
     renderCats();renderGrid();renderCart();
